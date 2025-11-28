@@ -53,10 +53,28 @@ pub fn main() !void {
         allocator.free(image_views);
     }
 
+    _ = create_shader_module(device, @embedFile("frag.spv"));
+
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
         c.glfwSwapBuffers(window);
     }
+}
+
+fn create_shader_module(device: c.VkDevice, comptime code: []const u8) c.VkShaderModule {
+    var buf: [code.len]u8 align(4) = undefined;
+    @memcpy(&buf, code);
+
+    const create_info = c.VkShaderModuleCreateInfo{
+        .sType = c.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = code.len,
+        .pCode = @ptrCast(@alignCast(&buf)),
+    };
+
+    var shader_module: c.VkShaderModule = undefined;
+    assert(c.vkCreateShaderModule(device, &create_info, null, &shader_module) == c.VK_SUCCESS);
+
+    return shader_module;
 }
 
 fn create_image_views(device: c.VkDevice, images: []c.VkImage, format: c.VkFormat) []c.VkImageView {
