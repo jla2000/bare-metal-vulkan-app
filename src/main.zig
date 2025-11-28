@@ -137,12 +137,15 @@ fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndice
     const device_features = c.VkPhysicalDeviceFeatures{};
 
     var unique_queue_indices = std.hash_map.AutoHashMap(u32, void).init(allocator);
+    defer unique_queue_indices.deinit();
+
     try unique_queue_indices.put(queue_indices.compute_queue_idx, void{});
     try unique_queue_indices.put(queue_indices.graphics_queue_idx, void{});
     try unique_queue_indices.put(queue_indices.present_queue_idx, void{});
 
     const queue_priority: f32 = 1.0;
     var queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo){};
+    defer queue_create_infos.deinit(allocator);
 
     var it = unique_queue_indices.keyIterator();
     while (it.next()) |queue_idx| {
