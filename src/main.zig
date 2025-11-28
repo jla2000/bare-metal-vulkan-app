@@ -41,13 +41,52 @@ pub fn main() !void {
     c.vkGetDeviceQueue(device, queue_indices.compute_family, 0, &compute_queue);
     c.vkGetDeviceQueue(device, queue_indices.present_family, 0, &present_queue);
 
-    const swapchain = create_swapchain(window, physical_device, device, surface, queue_indices);
+    const swapchain, const images, const format = create_swapchain(window, physical_device, device, surface, queue_indices);
     defer c.vkDestroySwapchainKHR(device, swapchain, null);
+    defer allocator.free(images);
+
+    const image_views = create_image_views(device, images, format);
+    defer {
+        for (image_views) |image_view| {
+            c.vkDestroyImageView(device, image_view, null);
+        }
+        allocator.free(image_views);
+    }
 
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
         c.glfwSwapBuffers(window);
     }
+}
+
+fn create_image_views(device: c.VkDevice, images: []c.VkImage, format: c.VkFormat) []c.VkImageView {
+    const image_views = allocator.alloc(c.VkImageView, images.len) catch unreachable;
+
+    for (0..images.len) |image_idx| {
+        const image_view_create_info = c.VkImageViewCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = images[image_idx],
+            .viewType = c.VK_IMAGE_VIEW_TYPE_2D,
+            .format = format,
+            .components = .{
+                .r = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+            },
+            .subresourceRange = .{
+                .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+
+        assert(c.vkCreateImageView(device, &image_view_create_info, null, &image_views[image_idx]) == c.VK_SUCCESS);
+    }
+
+    return image_views;
 }
 
 fn create_swapchain(
@@ -56,21 +95,21 @@ fn create_swapchain(
     device: c.VkDevice,
     surface: c.VkSurfaceKHR,
     queue_indices: QueueIndices,
-) c.VkSwapchainKHR {
+) struct { c.VkSwapchainKHR, []c.VkImage, c.VkFormat } {
     var capabilities: c.VkSurfaceCapabilitiesKHR = undefined;
     assert(c.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &capabilities) == c.VK_SUCCESS);
 
-    const num_images = capabilities.minImageCount + 1;
     const extent = choose_swapchain_extent(window, capabilities);
-    const format = choose_surface_format(physical_device, surface);
+    const surface_format = choose_surface_format(physical_device, surface);
     const present_mode = choose_swapchain_present_mode(physical_device, surface);
 
+    var num_images = capabilities.minImageCount + 1;
     var swapchain_create_info = c.VkSwapchainCreateInfoKHR{
         .sType = c.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = surface,
         .minImageCount = num_images,
-        .imageFormat = format.format,
-        .imageColorSpace = format.colorSpace,
+        .imageFormat = surface_format.format,
+        .imageColorSpace = surface_format.colorSpace,
         .imageExtent = extent,
         .imageArrayLayers = 1,
         .imageUsage = c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
@@ -91,7 +130,11 @@ fn create_swapchain(
     var swapchain: c.VkSwapchainKHR = undefined;
     assert(c.vkCreateSwapchainKHR(device, &swapchain_create_info, null, &swapchain) == c.VK_SUCCESS);
 
-    return swapchain;
+    assert(c.vkGetSwapchainImagesKHR(device, swapchain, &num_images, null) == c.VK_SUCCESS);
+    const images = allocator.alloc(c.VkImage, num_images) catch unreachable;
+    assert(c.vkGetSwapchainImagesKHR(device, swapchain, &num_images, images.ptr) == c.VK_SUCCESS);
+
+    return .{ swapchain, images, surface_format.format };
 }
 
 fn choose_swapchain_extent(window: ?*c.GLFWwindow, capabilities: c.VkSurfaceCapabilitiesKHR) c.VkExtent2D {
