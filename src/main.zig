@@ -19,7 +19,7 @@ pub fn main() !void {
     const window = c.glfwCreateWindow(800, 600, "Vulkan window", null, null);
     defer c.glfwDestroyWindow(window);
 
-    const instance = try create_instance();
+    const instance = create_instance();
     defer c.vkDestroyInstance(instance, null);
 
     var debug_messenger = debug.create_debug_messenger(instance);
@@ -29,8 +29,8 @@ pub fn main() !void {
     assert(c.glfwCreateWindowSurface(instance, window, null, &surface) == c.VK_SUCCESS);
     defer c.vkDestroySurfaceKHR(instance, surface, null);
 
-    const physical_device, const queue_indices = try find_physical_device(instance, surface);
-    const device = try create_device(physical_device, queue_indices);
+    const physical_device, const queue_indices = find_physical_device(instance, surface);
+    const device = create_device(physical_device, queue_indices);
     defer c.vkDestroyDevice(device, null);
 
     var graphics_queue: c.VkQueue = undefined;
@@ -91,12 +91,12 @@ fn choose_present_mode(physical_device: c.VkPhysicalDevice, surface: c.VkSurface
     return c.VK_PRESENT_MODE_FIFO_KHR;
 }
 
-fn create_instance() !c.VkInstance {
+fn create_instance() c.VkInstance {
     var num_glfw_extensions: u32 = 0;
     var glfw_extensions: [*c][*c]const u8 = null;
     glfw_extensions = c.glfwGetRequiredInstanceExtensions(&num_glfw_extensions);
 
-    var extensions = try allocator.alloc([*c]const u8, num_glfw_extensions + 1);
+    var extensions = allocator.alloc([*c]const u8, num_glfw_extensions + 1) catch unreachable;
     defer allocator.free(extensions);
 
     @memcpy(extensions, glfw_extensions);
@@ -129,7 +129,7 @@ fn create_instance() !c.VkInstance {
     return instance;
 }
 
-fn rate_physical_device(physical_device: c.VkPhysicalDevice) !u32 {
+fn rate_physical_device(physical_device: c.VkPhysicalDevice) u32 {
     var properties: c.VkPhysicalDeviceProperties = undefined;
     var features: c.VkPhysicalDeviceFeatures = undefined;
 
@@ -148,12 +148,12 @@ fn rate_physical_device(physical_device: c.VkPhysicalDevice) !u32 {
     return score;
 }
 
-fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) !struct { c.VkPhysicalDevice, QueueIndices } {
+fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) struct { c.VkPhysicalDevice, QueueIndices } {
     var num_devices: u32 = 0;
     assert(c.vkEnumeratePhysicalDevices(instance, &num_devices, null) == c.VK_SUCCESS);
     assert(num_devices > 0);
 
-    const physical_devices = try allocator.alloc(c.VkPhysicalDevice, num_devices);
+    const physical_devices = allocator.alloc(c.VkPhysicalDevice, num_devices) catch unreachable;
     defer allocator.free(physical_devices);
 
     assert(c.vkEnumeratePhysicalDevices(instance, &num_devices, physical_devices.ptr) == c.VK_SUCCESS);
@@ -163,8 +163,8 @@ fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) !struct
     var best_queue_indices: QueueIndices = undefined;
 
     for (physical_devices) |physical_device| {
-        const queue_indices = try find_queue_indices(physical_device, surface) orelse continue;
-        const score = try rate_physical_device(physical_device);
+        const queue_indices = find_queue_indices(physical_device, surface) orelse continue;
+        const score = rate_physical_device(physical_device);
 
         if (score >= best_score) {
             best_score = score;
@@ -177,16 +177,16 @@ fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) !struct
     return .{ best_device, best_queue_indices };
 }
 
-fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndices) !c.VkDevice {
+fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndices) c.VkDevice {
     const device_features = c.VkPhysicalDeviceFeatures{};
     const device_extensions = [_][*]const u8{c.VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
     var unique_queue_indices = std.hash_map.AutoHashMap(u32, void).init(allocator);
     defer unique_queue_indices.deinit();
 
-    try unique_queue_indices.put(queue_indices.compute_queue_idx, void{});
-    try unique_queue_indices.put(queue_indices.graphics_queue_idx, void{});
-    try unique_queue_indices.put(queue_indices.present_queue_idx, void{});
+    unique_queue_indices.put(queue_indices.compute_queue_idx, void{}) catch unreachable;
+    unique_queue_indices.put(queue_indices.graphics_queue_idx, void{}) catch unreachable;
+    unique_queue_indices.put(queue_indices.present_queue_idx, void{}) catch unreachable;
 
     const queue_priority: f32 = 1.0;
     var queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo){};
@@ -194,12 +194,12 @@ fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndice
 
     var it = unique_queue_indices.keyIterator();
     while (it.next()) |queue_idx| {
-        try queue_create_infos.append(allocator, c.VkDeviceQueueCreateInfo{
+        queue_create_infos.append(allocator, c.VkDeviceQueueCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
             .queueFamilyIndex = queue_idx.*,
             .queueCount = 1,
             .pQueuePriorities = &queue_priority,
-        });
+        }) catch unreachable;
     }
 
     const device_create_info = c.VkDeviceCreateInfo{
@@ -223,11 +223,11 @@ const QueueIndices = struct {
     present_queue_idx: u32,
 };
 
-fn find_queue_indices(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) !?QueueIndices {
+fn find_queue_indices(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) ?QueueIndices {
     var num_queue_families: u32 = 0;
     c.vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, null);
 
-    const queue_families = try allocator.alloc(c.VkQueueFamilyProperties, num_queue_families);
+    const queue_families = allocator.alloc(c.VkQueueFamilyProperties, num_queue_families) catch unreachable;
     defer allocator.free(queue_families);
 
     c.vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, queue_families.ptr);
