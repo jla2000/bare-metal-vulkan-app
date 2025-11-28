@@ -41,10 +41,54 @@ pub fn main() !void {
     c.vkGetDeviceQueue(device, queue_indices.compute_queue_idx, 0, &compute_queue);
     c.vkGetDeviceQueue(device, queue_indices.present_queue_idx, 0, &present_queue);
 
+    var capabilities: c.VkSurfaceCapabilitiesKHR = undefined;
+    assert(c.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &capabilities) == c.VK_SUCCESS);
+
+    const surface_format = choose_surface_format(physical_device, surface);
+    const present_mode = choose_present_mode(physical_device, surface);
+
+    _ = surface_format;
+    _ = present_mode;
+
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
         c.glfwSwapBuffers(window);
     }
+}
+
+fn choose_surface_format(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) c.VkSurfaceFormatKHR {
+    var num_surface_formats: u32 = 0;
+    assert(c.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &num_surface_formats, null) == c.VK_SUCCESS);
+
+    const surface_formats = allocator.alloc(c.VkSurfaceFormatKHR, num_surface_formats) catch unreachable;
+    defer allocator.free(surface_formats);
+    assert(c.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &num_surface_formats, surface_formats.ptr) == c.VK_SUCCESS);
+
+    for (surface_formats) |format| {
+        if (format.format == c.VK_FORMAT_B8G8R8A8_SRGB and format.colorSpace == c.VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            return format;
+        }
+    }
+
+    return surface_formats[0];
+}
+
+fn choose_present_mode(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) c.VkPresentModeKHR {
+    var num_present_modes: u32 = 0;
+    assert(c.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &num_present_modes, null) == c.VK_SUCCESS);
+
+    const present_modes = allocator.alloc(c.VkPresentModeKHR, num_present_modes) catch unreachable;
+    defer allocator.free(present_modes);
+    assert(c.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &num_present_modes, present_modes.ptr) == c.VK_SUCCESS);
+
+    for (present_modes) |mode| {
+        if (mode == c.VK_PRESENT_MODE_MAILBOX_KHR) {
+            return mode;
+        }
+    }
+
+    // fifo should be always supported.
+    return c.VK_PRESENT_MODE_FIFO_KHR;
 }
 
 fn create_instance() !c.VkInstance {
@@ -58,7 +102,7 @@ fn create_instance() !c.VkInstance {
     @memcpy(extensions, glfw_extensions);
     extensions[extensions.len - 1] = c.VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 
-    const enabled_layers = [_][*c]const u8{"VK_LAYER_KHRONOS_validation"};
+    const enabled_layers = [_][*]const u8{"VK_LAYER_KHRONOS_validation"};
 
     const app_info = c.VkApplicationInfo{
         .sType = c.VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -135,6 +179,7 @@ fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) !struct
 
 fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndices) !c.VkDevice {
     const device_features = c.VkPhysicalDeviceFeatures{};
+    const device_extensions = [_][*]const u8{c.VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
     var unique_queue_indices = std.hash_map.AutoHashMap(u32, void).init(allocator);
     defer unique_queue_indices.deinit();
@@ -162,6 +207,8 @@ fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndice
         .pQueueCreateInfos = queue_create_infos.items.ptr,
         .queueCreateInfoCount = @intCast(queue_create_infos.items.len),
         .pEnabledFeatures = &device_features,
+        .ppEnabledExtensionNames = &device_extensions,
+        .enabledExtensionCount = device_extensions.len,
     };
 
     var device: c.VkDevice = undefined;
