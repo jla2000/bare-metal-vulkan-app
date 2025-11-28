@@ -37,23 +37,76 @@ pub fn main() !void {
     var compute_queue: c.VkQueue = undefined;
     var present_queue: c.VkQueue = undefined;
 
-    c.vkGetDeviceQueue(device, queue_indices.graphics_queue_idx, 0, &graphics_queue);
-    c.vkGetDeviceQueue(device, queue_indices.compute_queue_idx, 0, &compute_queue);
-    c.vkGetDeviceQueue(device, queue_indices.present_queue_idx, 0, &present_queue);
+    c.vkGetDeviceQueue(device, queue_indices.graphics_family, 0, &graphics_queue);
+    c.vkGetDeviceQueue(device, queue_indices.compute_family, 0, &compute_queue);
+    c.vkGetDeviceQueue(device, queue_indices.present_family, 0, &present_queue);
 
-    var capabilities: c.VkSurfaceCapabilitiesKHR = undefined;
-    assert(c.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &capabilities) == c.VK_SUCCESS);
-
-    const surface_format = choose_surface_format(physical_device, surface);
-    const present_mode = choose_present_mode(physical_device, surface);
-
-    _ = surface_format;
-    _ = present_mode;
+    const swapchain = create_swapchain(window, physical_device, device, surface, queue_indices);
+    defer c.vkDestroySwapchainKHR(device, swapchain, null);
 
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
         c.glfwSwapBuffers(window);
     }
+}
+
+fn create_swapchain(
+    window: ?*c.GLFWwindow,
+    physical_device: c.VkPhysicalDevice,
+    device: c.VkDevice,
+    surface: c.VkSurfaceKHR,
+    queue_indices: QueueIndices,
+) c.VkSwapchainKHR {
+    var capabilities: c.VkSurfaceCapabilitiesKHR = undefined;
+    assert(c.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &capabilities) == c.VK_SUCCESS);
+
+    const num_images = capabilities.minImageCount + 1;
+    const extent = choose_swapchain_extent(window, capabilities);
+    const format = choose_surface_format(physical_device, surface);
+    const present_mode = choose_swapchain_present_mode(physical_device, surface);
+
+    var swapchain_create_info = c.VkSwapchainCreateInfoKHR{
+        .sType = c.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface = surface,
+        .minImageCount = num_images,
+        .imageFormat = format.format,
+        .imageColorSpace = format.colorSpace,
+        .imageExtent = extent,
+        .imageArrayLayers = 1,
+        .imageUsage = c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
+        .preTransform = capabilities.currentTransform,
+        .compositeAlpha = c.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = present_mode,
+        .clipped = c.VK_TRUE,
+        .oldSwapchain = null,
+    };
+
+    if (queue_indices.graphics_family != queue_indices.present_family) {
+        swapchain_create_info.imageSharingMode = c.VK_SHARING_MODE_CONCURRENT;
+        swapchain_create_info.queueFamilyIndexCount = 2;
+        swapchain_create_info.pQueueFamilyIndices = &[_]u32{ queue_indices.graphics_family, queue_indices.compute_family };
+    }
+
+    var swapchain: c.VkSwapchainKHR = undefined;
+    assert(c.vkCreateSwapchainKHR(device, &swapchain_create_info, null, &swapchain) == c.VK_SUCCESS);
+
+    return swapchain;
+}
+
+fn choose_swapchain_extent(window: ?*c.GLFWwindow, capabilities: c.VkSurfaceCapabilitiesKHR) c.VkExtent2D {
+    if (capabilities.currentExtent.width != std.math.maxInt(u32)) {
+        return capabilities.currentExtent;
+    }
+
+    var width: i32 = 0;
+    var height: i32 = 0;
+    c.glfwGetFramebufferSize(window, &width, &height);
+
+    return c.VkExtent2D{
+        .width = std.math.clamp(@as(u32, @intCast(width)), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+        .height = std.math.clamp(@as(u32, @intCast(height)), capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
+    };
 }
 
 fn choose_surface_format(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) c.VkSurfaceFormatKHR {
@@ -73,7 +126,7 @@ fn choose_surface_format(physical_device: c.VkPhysicalDevice, surface: c.VkSurfa
     return surface_formats[0];
 }
 
-fn choose_present_mode(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) c.VkPresentModeKHR {
+fn choose_swapchain_present_mode(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) c.VkPresentModeKHR {
     var num_present_modes: u32 = 0;
     assert(c.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &num_present_modes, null) == c.VK_SUCCESS);
 
@@ -184,9 +237,9 @@ fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndice
     var unique_queue_indices = std.hash_map.AutoHashMap(u32, void).init(allocator);
     defer unique_queue_indices.deinit();
 
-    unique_queue_indices.put(queue_indices.compute_queue_idx, void{}) catch unreachable;
-    unique_queue_indices.put(queue_indices.graphics_queue_idx, void{}) catch unreachable;
-    unique_queue_indices.put(queue_indices.present_queue_idx, void{}) catch unreachable;
+    unique_queue_indices.put(queue_indices.compute_family, void{}) catch unreachable;
+    unique_queue_indices.put(queue_indices.graphics_family, void{}) catch unreachable;
+    unique_queue_indices.put(queue_indices.present_family, void{}) catch unreachable;
 
     const queue_priority: f32 = 1.0;
     var queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo){};
@@ -218,9 +271,9 @@ fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndice
 }
 
 const QueueIndices = struct {
-    graphics_queue_idx: u32,
-    compute_queue_idx: u32,
-    present_queue_idx: u32,
+    graphics_family: u32,
+    compute_family: u32,
+    present_family: u32,
 };
 
 fn find_queue_indices(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) ?QueueIndices {
@@ -240,10 +293,10 @@ fn find_queue_indices(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceK
         const queue_family = queue_families[idx];
         const queue_family_idx: u32 = @intCast(idx);
 
-        var present_support: c.VkBool32 = 0;
+        var present_support: c.VkBool32 = c.VK_FALSE;
         assert(c.vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, queue_family_idx, surface, &present_support) == c.VK_SUCCESS);
 
-        if (present_support == 1) {
+        if (present_support == c.VK_TRUE) {
             present_queue_idx = queue_family_idx;
         }
         if (queue_family.queueFlags & c.VK_QUEUE_COMPUTE_BIT != 0) {
@@ -259,8 +312,8 @@ fn find_queue_indices(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceK
     const present = present_queue_idx orelse return null;
 
     return QueueIndices{
-        .compute_queue_idx = compute,
-        .graphics_queue_idx = graphics,
-        .present_queue_idx = present,
+        .compute_family = compute,
+        .graphics_family = graphics,
+        .present_family = present,
     };
 }
