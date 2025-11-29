@@ -2,7 +2,7 @@
 
 pkgs.mkShell {
   buildInputs = with pkgs; [
-    glslang
+    shader-slang
     vulkan-loader
     vulkan-headers
     glfw

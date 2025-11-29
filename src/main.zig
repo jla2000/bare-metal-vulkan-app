@@ -60,7 +60,7 @@ pub fn main() !void {
         allocator.free(image_views);
     }
 
-    const shader_module = create_shader_module(device, @embedFile("frag.spv"));
+    const shader_module = create_shader_module(device, &c.SPIRV_SHADER_CODE);
     defer c.vkDestroyShaderModule(device, shader_module, null);
 
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
@@ -70,14 +70,11 @@ pub fn main() !void {
     }
 }
 
-fn create_shader_module(device: c.VkDevice, comptime code: []const u8) c.VkShaderModule {
-    var buf: [code.len]u8 align(4) = undefined;
-    @memcpy(&buf, code);
-
+fn create_shader_module(device: c.VkDevice, code: []const u32) c.VkShaderModule {
     const create_info = c.VkShaderModuleCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = code.len,
-        .pCode = @ptrCast(@alignCast(&buf)),
+        .codeSize = code.len * @sizeOf(u32),
+        .pCode = code.ptr,
     };
 
     var shader_module: c.VkShaderModule = undefined;
