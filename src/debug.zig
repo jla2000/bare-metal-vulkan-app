@@ -1,5 +1,6 @@
 const std = @import("std");
-const c = @import("c_imports.zig").c;
+
+const c = @import("common.zig").c;
 const assert = std.debug.assert;
 
 pub const DEBUG_MESSENGER_CREATE_INFO = c.VkDebugUtilsMessengerCreateInfoEXT{
@@ -40,7 +41,7 @@ fn debug_callback(
     _ = user_data;
 
     switch (message_severity) {
-        c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT => std.log.debug("{s}", .{callback_data.*.pMessage}),
+        // c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT => std.log.debug("{s}", .{callback_data.*.pMessage}),
         c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT => std.log.warn("{s}", .{callback_data.*.pMessage}),
         c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT => std.log.err("{s}", .{callback_data.*.pMessage}),
         else => {},

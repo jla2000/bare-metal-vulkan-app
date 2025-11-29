@@ -1,11 +1,10 @@
 const std = @import("std");
 const debug = @import("debug.zig");
-const c = @import("c_imports.zig").c;
+const common = @import("common.zig");
+const c = common.c;
 
+const allocator = common.allocator;
 const assert = std.debug.assert;
-
-var gpa = std.heap.DebugAllocator(.{}){};
-const allocator = gpa.allocator();
 
 pub fn main() !void {
     if (c.glfwInit() != c.GLFW_TRUE) {
