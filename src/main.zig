@@ -29,19 +29,27 @@ pub fn main() !void {
     assert(c.glfwCreateWindowSurface(instance, window, null, &surface) == c.VK_SUCCESS);
     defer c.vkDestroySurfaceKHR(instance, surface, null);
 
-    const physical_device, const queue_indices = find_physical_device(instance, surface);
-    const device = create_device(physical_device, queue_indices);
+    const physical_device = find_physical_device(instance, surface);
+    std.log.info("Using physical device: {s}", .{physical_device.properties.deviceName});
+
+    const device = create_device(physical_device.handle, physical_device.queue_indices);
     defer c.vkDestroyDevice(device, null);
 
     var graphics_queue: c.VkQueue = undefined;
     var compute_queue: c.VkQueue = undefined;
     var present_queue: c.VkQueue = undefined;
 
-    c.vkGetDeviceQueue(device, queue_indices.graphics_family, 0, &graphics_queue);
-    c.vkGetDeviceQueue(device, queue_indices.compute_family, 0, &compute_queue);
-    c.vkGetDeviceQueue(device, queue_indices.present_family, 0, &present_queue);
+    c.vkGetDeviceQueue(device, physical_device.queue_indices.graphics_family, 0, &graphics_queue);
+    c.vkGetDeviceQueue(device, physical_device.queue_indices.compute_family, 0, &compute_queue);
+    c.vkGetDeviceQueue(device, physical_device.queue_indices.present_family, 0, &present_queue);
 
-    const swapchain, const images, const format = create_swapchain(window, physical_device, device, surface, queue_indices);
+    const swapchain, const images, const format = create_swapchain(
+        window,
+        physical_device.handle,
+        device,
+        surface,
+        physical_device.queue_indices,
+    );
     defer c.vkDestroySwapchainKHR(device, swapchain, null);
     defer allocator.free(images);
 
@@ -53,11 +61,13 @@ pub fn main() !void {
         allocator.free(image_views);
     }
 
-    _ = create_shader_module(device, @embedFile("frag.spv"));
+    const shader_module = create_shader_module(device, @embedFile("frag.spv"));
+    defer c.vkDestroyShaderModule(device, shader_module, null);
 
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
         c.glfwSwapBuffers(window);
+        break;
     }
 }
 
@@ -195,11 +205,11 @@ fn choose_swapchain_present_mode(physical_device: c.VkPhysicalDevice, surface: c
     defer allocator.free(present_modes);
     assert(c.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &num_present_modes, present_modes.ptr) == c.VK_SUCCESS);
 
-    for (present_modes) |mode| {
-        if (mode == c.VK_PRESENT_MODE_MAILBOX_KHR) {
-            return mode;
-        }
-    }
+    // for (present_modes) |mode| {
+    //     if (mode == c.VK_PRESENT_MODE_MAILBOX_KHR) {
+    //         return mode;
+    //     }
+    // }
 
     // fifo should be always supported.
     return c.VK_PRESENT_MODE_FIFO_KHR;
@@ -243,52 +253,64 @@ fn create_instance() c.VkInstance {
     return instance;
 }
 
-fn rate_physical_device(physical_device: c.VkPhysicalDevice) u32 {
-    var properties: c.VkPhysicalDeviceProperties = undefined;
-    var features: c.VkPhysicalDeviceFeatures = undefined;
+const PhysicalDeviceInfo = struct {
+    handle: c.VkPhysicalDevice,
+    features: c.VkPhysicalDeviceFeatures,
+    properties: c.VkPhysicalDeviceProperties,
+    queue_indices: QueueIndices,
+};
 
-    c.vkGetPhysicalDeviceProperties(physical_device, &properties);
-    c.vkGetPhysicalDeviceFeatures(physical_device, &features);
-
-    const score: u32 = switch (properties.deviceType) {
-        c.VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU => 3,
-        c.VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => 2,
-        c.VK_PHYSICAL_DEVICE_TYPE_CPU => 1,
-        else => return 0,
-    };
-
-    std.log.info("Found suitable physical device: {s}", .{properties.deviceName});
-
-    return score;
-}
-
-fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) struct { c.VkPhysicalDevice, QueueIndices } {
+fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) PhysicalDeviceInfo {
     var num_devices: u32 = 0;
     assert(c.vkEnumeratePhysicalDevices(instance, &num_devices, null) == c.VK_SUCCESS);
     assert(num_devices > 0);
 
     const physical_devices = allocator.alloc(c.VkPhysicalDevice, num_devices) catch unreachable;
     defer allocator.free(physical_devices);
-
     assert(c.vkEnumeratePhysicalDevices(instance, &num_devices, physical_devices.ptr) == c.VK_SUCCESS);
 
-    var best_score: u32 = 0;
-    var best_device: c.VkPhysicalDevice = undefined;
-    var best_queue_indices: QueueIndices = undefined;
+    var suitable_devices = std.ArrayList(PhysicalDeviceInfo){};
+    defer suitable_devices.deinit(allocator);
 
     for (physical_devices) |physical_device| {
         const queue_indices = find_queue_indices(physical_device, surface) orelse continue;
-        const score = rate_physical_device(physical_device);
 
-        if (score >= best_score) {
-            best_score = score;
-            best_device = physical_device;
-            best_queue_indices = queue_indices;
+        var properties: c.VkPhysicalDeviceProperties = undefined;
+        var features: c.VkPhysicalDeviceFeatures = undefined;
+        c.vkGetPhysicalDeviceProperties(physical_device, &properties);
+        c.vkGetPhysicalDeviceFeatures(physical_device, &features);
+
+        suitable_devices.append(allocator, PhysicalDeviceInfo{
+            .handle = physical_device,
+            .features = features,
+            .properties = properties,
+            .queue_indices = queue_indices,
+        }) catch unreachable;
+
+        std.log.debug("Found suitable device: {s}", .{properties.deviceName});
+    }
+
+    if (suitable_devices.items.len == 0) {
+        @panic("No suitable device found");
+    }
+
+    var best_device_index: usize = 0;
+    var best_device_score: usize = 0;
+
+    for (0..suitable_devices.items.len) |device_index| {
+        const score: usize = switch (suitable_devices.items[device_index].properties.deviceType) {
+            c.VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU => 2,
+            c.VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => 1,
+            else => 0,
+        };
+
+        if (score >= best_device_index) {
+            best_device_score = score;
+            best_device_index = device_index;
         }
     }
 
-    assert(best_score > 0);
-    return .{ best_device, best_queue_indices };
+    return suitable_devices.items[best_device_index];
 }
 
 fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndices) c.VkDevice {
