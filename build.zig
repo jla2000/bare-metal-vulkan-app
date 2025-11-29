@@ -13,9 +13,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    const shader_step = b.addSystemCommand(&[_][]const u8{
-        "slangc",
-        "shaders/hello.slang",
+    const shader_step = b.addSystemCommand(&[_][]const u8{"slangc"});
+    shader_step.addFileArg(b.path("src/shaders/main.slang"));
+    shader_step.addArgs(&[_][]const u8{
         "-target",
         "spirv",
         "-source-embed-style",
@@ -26,10 +26,11 @@ pub fn build(b: *std.Build) void {
         "SPIRV_SHADER_CODE",
         "-o",
     });
-    const shader_header = shader_step.addOutputFileArg("spirv_shader.h");
-    exe.step.dependOn(&shader_step.step);
+    const shader_output = shader_step.addOutputFileArg("spirv_shader.h");
 
-    exe.addIncludePath(shader_header.dirname());
+    exe.step.dependOn(&shader_step.step);
+    exe.addIncludePath(shader_output.dirname());
+
     exe.linkSystemLibrary("vulkan");
     exe.linkSystemLibrary("glfw");
     exe.linkLibC();
@@ -40,9 +41,4 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run the application");
     run_step.dependOn(&run_exe.step);
-}
-
-fn build_shaders(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
-    _ = options;
-    _ = step;
 }

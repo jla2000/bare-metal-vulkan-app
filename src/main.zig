@@ -6,6 +6,13 @@ const c = common.c;
 const allocator = common.allocator;
 const assert = std.debug.assert;
 
+const device_extensions = [_][*]const u8{
+    c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    c.VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+    c.VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+    c.VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+};
+
 pub fn main() !void {
     if (c.glfwInit() != c.GLFW_TRUE) {
         return error.GlfwInit;
@@ -276,6 +283,13 @@ fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) Physica
         c.vkGetPhysicalDeviceProperties(physical_device, &properties);
         c.vkGetPhysicalDeviceFeatures(physical_device, &features);
 
+        var num_extensions: u32 = 0;
+        assert(c.vkEnumerateDeviceExtensionProperties(physical_device, null, &num_extensions, null) == c.VK_SUCCESS);
+        const extensions = allocator.alloc(c.VkExtensionProperties, num_extensions) catch unreachable;
+        assert(c.vkEnumerateDeviceExtensionProperties(physical_device, null, &num_extensions, extensions.ptr) == c.VK_SUCCESS);
+
+        // TODO: check if the extensions are supported
+
         suitable_devices.append(allocator, PhysicalDeviceInfo{
             .handle = physical_device,
             .features = features,
@@ -311,8 +325,6 @@ fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) Physica
 
 fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndices) c.VkDevice {
     const device_features = c.VkPhysicalDeviceFeatures{};
-    const device_extensions = [_][*]const u8{c.VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-
     var unique_queue_indices = std.hash_map.AutoHashMap(u32, void).init(allocator);
     defer unique_queue_indices.deinit();
 
@@ -334,6 +346,11 @@ fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndice
         }) catch unreachable;
     }
 
+    const enable_raytracing_pipeline = c.VkPhysicalDeviceRayTracingPipelineFeaturesKHR{
+        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
+        .rayTracingPipeline = c.VK_TRUE,
+    };
+
     const device_create_info = c.VkDeviceCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pQueueCreateInfos = queue_create_infos.items.ptr,
@@ -341,6 +358,7 @@ fn create_device(physical_device: c.VkPhysicalDevice, queue_indices: QueueIndice
         .pEnabledFeatures = &device_features,
         .ppEnabledExtensionNames = &device_extensions,
         .enabledExtensionCount = device_extensions.len,
+        .pNext = &enable_raytracing_pipeline,
     };
 
     var device: c.VkDevice = undefined;
