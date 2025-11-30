@@ -38,13 +38,8 @@ pub fn main() !void {
     const device = dev.create_device(physical_device.handle, physical_device.queue_indices);
     defer c.vkDestroyDevice(device, null);
 
-    var graphics_queue: c.VkQueue = undefined;
-    var compute_queue: c.VkQueue = undefined;
-    var present_queue: c.VkQueue = undefined;
-
-    c.vkGetDeviceQueue(device, physical_device.queue_indices.graphics_family, 0, &graphics_queue);
-    c.vkGetDeviceQueue(device, physical_device.queue_indices.compute_family, 0, &compute_queue);
-    c.vkGetDeviceQueue(device, physical_device.queue_indices.present_family, 0, &present_queue);
+    const queues = queue.create_queues(device, physical_device.queue_indices);
+    _ = queues;
 
     const swapchain, const images, const format = swap.create_swapchain(
         window,

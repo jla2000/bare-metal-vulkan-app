@@ -11,6 +11,12 @@ pub const QueueIndices = struct {
     present_family: u32,
 };
 
+pub const Queues = struct {
+    graphics_queue: c.VkQueue,
+    compute_queue: c.VkQueue,
+    present_queue: c.VkQueue,
+};
+
 pub fn find_queue_indices(physical_device: c.VkPhysicalDevice, surface: c.VkSurfaceKHR) ?QueueIndices {
     var num_queue_families: u32 = 0;
     c.vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, null);
@@ -51,4 +57,14 @@ pub fn find_queue_indices(physical_device: c.VkPhysicalDevice, surface: c.VkSurf
         .graphics_family = graphics,
         .present_family = present,
     };
+}
+
+pub fn create_queues(device: c.VkDevice, queue_indices: QueueIndices) Queues {
+    var queues: Queues = undefined;
+
+    c.vkGetDeviceQueue(device, queue_indices.graphics_family, 0, &queues.graphics_queue);
+    c.vkGetDeviceQueue(device, queue_indices.compute_family, 0, &queues.compute_queue);
+    c.vkGetDeviceQueue(device, queue_indices.present_family, 0, &queues.present_queue);
+
+    return queues;
 }
