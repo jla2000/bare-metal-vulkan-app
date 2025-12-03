@@ -5,6 +5,8 @@ pub const c = @cImport({
     @cInclude("GLFW/glfw3.h");
 });
 
+pub const CreateSurfaceFn = fn (?*anyopaque, c.VkInstance, *c.VkSurfaceKHR) c.VkResult;
+
 pub const Context = struct {
     instance: c.VkInstance,
     debug_messenger: ?c.VkDebugUtilsMessengerEXT,
@@ -15,17 +17,22 @@ pub const Context = struct {
     queue_family_idx: u32,
 
     pub fn init(
+        window_handle: ?*anyopaque,
         allocator: std.mem.Allocator,
         window_extensions: [][*c]const u8,
         enable_debug: bool,
+        create_surface: CreateSurfaceFn,
     ) !Context {
         const instance = try create_instance(allocator, window_extensions, enable_debug);
         const debug_messenger = if (enable_debug) try create_debug_messenger(instance) else null;
 
+        var surface: c.VkSurfaceKHR = undefined;
+        try vk_error(create_surface(window_handle, instance, &surface));
+
         return .{
             .instance = instance,
             .debug_messenger = debug_messenger,
-            .surface = undefined,
+            .surface = surface,
             .phys_device = undefined,
             .device = undefined,
             .queue = undefined,
@@ -34,6 +41,7 @@ pub const Context = struct {
     }
 
     pub fn deinit(self: *Context) void {
+        c.vkDestroySurfaceKHR(self.instance, self.surface, null);
         if (self.debug_messenger) |*debug_messenger| {
             destroy_debug_messenger(self.instance, debug_messenger);
         }

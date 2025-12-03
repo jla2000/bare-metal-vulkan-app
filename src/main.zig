@@ -20,11 +20,18 @@ pub fn main() !void {
     glfw_extensions = core.c.glfwGetRequiredInstanceExtensions(&num_glfw_extensions);
 
     var context = try core.Context.init(
+        window,
         allocator,
         glfw_extensions[0..num_glfw_extensions],
         true,
+        create_surface,
     );
     defer context.deinit();
+}
+
+fn create_surface(window: ?*anyopaque, instance: core.c.VkInstance, surface: *core.c.VkSurfaceKHR) core.c.VkResult {
+    const window_: *core.c.GLFWwindow = @ptrCast(window);
+    return core.c.glfwCreateWindowSurface(instance, window_, null, surface);
 }
 
 // const std = @import("std");
