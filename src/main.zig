@@ -1,23 +1,25 @@
 const std = @import("std");
 const core = @import("core.zig");
 
+const c = @import("c.zig").c;
+
 const allocator = std.heap.c_allocator;
 
 pub fn main() !void {
-    if (core.c.glfwInit() != core.c.GLFW_TRUE) {
+    if (c.glfwInit() != c.GLFW_TRUE) {
         return error.GlfwInit;
     }
-    defer core.c.glfwTerminate();
+    defer c.glfwTerminate();
 
-    core.c.glfwWindowHint(core.c.GLFW_CLIENT_API, core.c.GLFW_NO_API);
-    core.c.glfwWindowHint(core.c.GLFW_RESIZABLE, core.c.GLFW_FALSE);
+    c.glfwWindowHint(c.GLFW_CLIENT_API, c.GLFW_NO_API);
+    c.glfwWindowHint(c.GLFW_RESIZABLE, c.GLFW_FALSE);
 
-    const window = core.c.glfwCreateWindow(800, 600, "Vulkan window", null, null);
-    defer core.c.glfwDestroyWindow(window);
+    const window = c.glfwCreateWindow(800, 600, "Vulkan window", null, null);
+    defer c.glfwDestroyWindow(window);
 
     var num_glfw_extensions: u32 = 0;
     var glfw_extensions: [*][*c]const u8 = undefined;
-    glfw_extensions = core.c.glfwGetRequiredInstanceExtensions(&num_glfw_extensions);
+    glfw_extensions = c.glfwGetRequiredInstanceExtensions(&num_glfw_extensions);
 
     var context = try core.Context.init(
         window,
@@ -29,9 +31,9 @@ pub fn main() !void {
     defer context.deinit();
 }
 
-fn create_surface(window: ?*anyopaque, instance: core.c.VkInstance, surface: *core.c.VkSurfaceKHR) core.c.VkResult {
-    const window_: *core.c.GLFWwindow = @ptrCast(window);
-    return core.c.glfwCreateWindowSurface(instance, window_, null, surface);
+fn create_surface(window: ?*anyopaque, instance: c.VkInstance, surface: *c.VkSurfaceKHR) c.VkResult {
+    const window_: *c.GLFWwindow = @ptrCast(window);
+    return c.glfwCreateWindowSurface(instance, window_, null, surface);
 }
 
 // const std = @import("std");

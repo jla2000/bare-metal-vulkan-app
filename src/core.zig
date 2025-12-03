@@ -1,9 +1,5 @@
 const std = @import("std");
-
-pub const c = @cImport({
-    @cDefine("GLFW_INCLUDE_VULKAN", "");
-    @cInclude("GLFW/glfw3.h");
-});
+const c = @import("c.zig").c;
 
 pub const CreateSurfaceFn = fn (?*anyopaque, c.VkInstance, *c.VkSurfaceKHR) c.VkResult;
 
@@ -19,11 +15,11 @@ pub const Context = struct {
     pub fn init(
         window_handle: ?*anyopaque,
         allocator: std.mem.Allocator,
-        window_extensions: [][*c]const u8,
+        instance_extensions: [][*c]const u8,
         enable_debug: bool,
         create_surface: CreateSurfaceFn,
     ) !Context {
-        const instance = try create_instance(allocator, window_extensions, enable_debug);
+        const instance = try create_instance(allocator, instance_extensions, enable_debug);
         const debug_messenger = if (enable_debug) try create_debug_messenger(instance) else null;
 
         var surface: c.VkSurfaceKHR = undefined;
@@ -57,13 +53,13 @@ pub fn vk_error(result: c.VkResult) !void {
 
 fn create_instance(
     allocator: std.mem.Allocator,
-    window_extensions: [][*c]const u8,
+    required_extensions: [][*c]const u8,
     enable_debug: bool,
 ) !c.VkInstance {
     var extensions = std.ArrayList([*c]const u8){};
     defer extensions.deinit(allocator);
 
-    try extensions.appendSlice(allocator, window_extensions);
+    try extensions.appendSlice(allocator, required_extensions);
     if (enable_debug) {
         try extensions.append(allocator, c.VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
