@@ -21,10 +21,18 @@ pub fn main() !void {
     var glfw_extensions: [*][*c]const u8 = undefined;
     glfw_extensions = c.glfwGetRequiredInstanceExtensions(&num_glfw_extensions);
 
+    const device_extensions = [_][*]const u8{
+        c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        c.VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+        c.VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        c.VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+    };
+
     var context = try core.Context.init(
         window,
         allocator,
         glfw_extensions[0..num_glfw_extensions],
+        &device_extensions,
         true,
         create_surface,
     );

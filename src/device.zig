@@ -8,7 +8,6 @@ const assert = std.debug.assert;
 
 pub const PhysicalDeviceInfo = struct {
     handle: c.VkPhysicalDevice,
-    features: c.VkPhysicalDeviceFeatures,
     properties: c.VkPhysicalDeviceProperties,
     queue_indices: queue.QueueIndices,
 };
@@ -36,9 +35,7 @@ pub fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) Phy
         const queue_indices = queue.find_queue_indices(physical_device, surface) orelse continue;
 
         var properties: c.VkPhysicalDeviceProperties = undefined;
-        var features: c.VkPhysicalDeviceFeatures = undefined;
         c.vkGetPhysicalDeviceProperties(physical_device, &properties);
-        c.vkGetPhysicalDeviceFeatures(physical_device, &features);
 
         var num_extensions: u32 = 0;
         assert(c.vkEnumerateDeviceExtensionProperties(physical_device, null, &num_extensions, null) == c.VK_SUCCESS);
@@ -49,7 +46,6 @@ pub fn find_physical_device(instance: c.VkInstance, surface: c.VkSurfaceKHR) Phy
 
         suitable_devices.append(allocator, PhysicalDeviceInfo{
             .handle = physical_device,
-            .features = features,
             .properties = properties,
             .queue_indices = queue_indices,
         }) catch unreachable;

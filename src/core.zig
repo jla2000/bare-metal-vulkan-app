@@ -15,7 +15,8 @@ pub const Context = struct {
     pub fn init(
         window_handle: ?*anyopaque,
         allocator: std.mem.Allocator,
-        instance_extensions: [][*c]const u8,
+        instance_extensions: []const [*c]const u8,
+        device_extensions: []const [*c]const u8,
         enable_debug: bool,
         create_surface: CreateSurfaceFn,
     ) !Context {
@@ -25,18 +26,27 @@ pub const Context = struct {
         var surface: c.VkSurfaceKHR = undefined;
         try vk_error(create_surface(window_handle, instance, &surface));
 
+        const suitable_devices = try find_suitable_devices(allocator, instance, surface);
+        defer allocator.free(suitable_devices);
+
+        const phys_device, const properties, const queue_family_idx = try pick_best_device(suitable_devices);
+        std.log.info("Picking device: {s}", .{properties.deviceName});
+
+        const device = try create_device(phys_device, queue_family_idx, device_extensions);
+
         return .{
             .instance = instance,
             .debug_messenger = debug_messenger,
             .surface = surface,
-            .phys_device = undefined,
-            .device = undefined,
+            .phys_device = phys_device,
+            .device = device,
             .queue = undefined,
-            .queue_family_idx = undefined,
+            .queue_family_idx = queue_family_idx,
         };
     }
 
     pub fn deinit(self: *Context) void {
+        c.vkDestroyDevice(self.device, null);
         c.vkDestroySurfaceKHR(self.instance, self.surface, null);
         if (self.debug_messenger) |*debug_messenger| {
             destroy_debug_messenger(self.instance, debug_messenger);
@@ -53,7 +63,7 @@ pub fn vk_error(result: c.VkResult) !void {
 
 fn create_instance(
     allocator: std.mem.Allocator,
-    required_extensions: [][*c]const u8,
+    required_extensions: []const [*c]const u8,
     enable_debug: bool,
 ) !c.VkInstance {
     var extensions = std.ArrayList([*c]const u8){};
@@ -140,4 +150,120 @@ pub fn destroy_debug_messenger(instance: c.VkInstance, debug_messenger: *c.VkDeb
         "vkDestroyDebugUtilsMessengerEXT",
     ));
     destroy_debug_utils_messenger_ext.?(instance, debug_messenger.*, null);
+}
+
+pub fn find_suitable_devices(
+    allocator: std.mem.Allocator,
+    instance: c.VkInstance,
+    surface: c.VkSurfaceKHR,
+) ![]struct { c.VkPhysicalDevice, c.VkPhysicalDeviceProperties, u32 } {
+    var num_devices: u32 = 0;
+    try vk_error(c.vkEnumeratePhysicalDevices(instance, &num_devices, null));
+
+    const physical_devices = try allocator.alloc(c.VkPhysicalDevice, num_devices);
+    defer allocator.free(physical_devices);
+    try vk_error(c.vkEnumeratePhysicalDevices(instance, &num_devices, physical_devices.ptr));
+
+    var suitable_devices = std.ArrayList(struct { c.VkPhysicalDevice, c.VkPhysicalDeviceProperties, u32 }){};
+
+    for (physical_devices) |physical_device| {
+        const queue_family_idx = try find_queue_family_index(allocator, physical_device, surface) orelse continue;
+
+        var properties: c.VkPhysicalDeviceProperties = undefined;
+        c.vkGetPhysicalDeviceProperties(physical_device, &properties);
+
+        var num_extensions: u32 = 0;
+        try vk_error(c.vkEnumerateDeviceExtensionProperties(physical_device, null, &num_extensions, null));
+
+        const extensions = allocator.alloc(c.VkExtensionProperties, num_extensions) catch unreachable;
+        try vk_error(c.vkEnumerateDeviceExtensionProperties(physical_device, null, &num_extensions, extensions.ptr));
+
+        // TODO: check if the extensions are supported
+
+        try suitable_devices.append(allocator, .{ physical_device, properties, queue_family_idx });
+        std.log.debug("Found suitable device: {s}", .{properties.deviceName});
+    }
+
+    return suitable_devices.items;
+}
+
+fn pick_best_device(
+    suitable_devices: []struct { c.VkPhysicalDevice, c.VkPhysicalDeviceProperties, u32 },
+) !struct { c.VkPhysicalDevice, c.VkPhysicalDeviceProperties, u32 } {
+    var best_device_index: usize = 0;
+    var best_device_score: usize = 0;
+
+    for (0..suitable_devices.len) |device_index| {
+        const score: usize = switch (suitable_devices[device_index][1].deviceType) {
+            c.VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU => 2,
+            c.VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => 1,
+            else => 0,
+        };
+
+        if (score >= best_device_index) {
+            best_device_score = score;
+            best_device_index = device_index;
+        }
+    }
+
+    return suitable_devices[best_device_index];
+}
+
+pub fn find_queue_family_index(
+    allocator: std.mem.Allocator,
+    physical_device: c.VkPhysicalDevice,
+    surface: c.VkSurfaceKHR,
+) !?u32 {
+    var num_queue_families: u32 = 0;
+    c.vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, null);
+
+    const queue_families = allocator.alloc(c.VkQueueFamilyProperties, num_queue_families) catch unreachable;
+    defer allocator.free(queue_families);
+    c.vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, queue_families.ptr);
+
+    for (0..num_queue_families) |idx| {
+        const queue_family = queue_families[idx];
+        const queue_family_idx: u32 = @intCast(idx);
+
+        var present_support: c.VkBool32 = c.VK_FALSE;
+        try vk_error(c.vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, queue_family_idx, surface, &present_support));
+
+        if (present_support == c.VK_TRUE and queue_family.queueFlags & c.VK_QUEUE_COMPUTE_BIT != 0 and queue_family.queueFlags & c.VK_QUEUE_GRAPHICS_BIT != 0) {
+            return queue_family_idx;
+        }
+    }
+
+    return null;
+}
+
+pub fn create_device(physical_device: c.VkPhysicalDevice, queue_family_idx: u32, extensions: []const [*c]const u8) !c.VkDevice {
+    const device_features = c.VkPhysicalDeviceFeatures{};
+
+    const queue_priority: f32 = 0.5;
+    const queue_create_info = c.VkDeviceQueueCreateInfo{
+        .sType = c.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueFamilyIndex = queue_family_idx,
+        .queueCount = 1,
+        .pQueuePriorities = &queue_priority,
+    };
+
+    const enable_raytracing_pipeline = c.VkPhysicalDeviceRayTracingPipelineFeaturesKHR{
+        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
+        .rayTracingPipeline = c.VK_TRUE,
+    };
+
+    const device_create_info = c.VkDeviceCreateInfo{
+        .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pQueueCreateInfos = &queue_create_info,
+        .queueCreateInfoCount = 1,
+        .pEnabledFeatures = &device_features,
+        .ppEnabledExtensionNames = extensions.ptr,
+        .enabledExtensionCount = @intCast(extensions.len),
+        .pNext = &enable_raytracing_pipeline,
+    };
+
+    var device: c.VkDevice = undefined;
+    try vk_error(c.vkCreateDevice(physical_device, &device_create_info, null, &device));
+
+    return device;
 }
