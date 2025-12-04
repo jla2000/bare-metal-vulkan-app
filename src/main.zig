@@ -30,15 +30,21 @@ pub fn main() !void {
         c.VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
     };
 
-    const enable_raytracing_pipeline = c.VkPhysicalDeviceRayTracingPipelineFeaturesKHR{
+    var acceleration_structure_feature = c.VkPhysicalDeviceAccelerationStructureFeaturesKHR{
+        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
+        .accelerationStructure = c.VK_TRUE,
+    };
+    const raytracing_pipeline_feature = c.VkPhysicalDeviceRayTracingPipelineFeaturesKHR{
         .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
         .rayTracingPipeline = c.VK_TRUE,
+        .pNext = &acceleration_structure_feature,
     };
 
     var core = try Core.init(
         glfw_extensions[0..num_glfw_extensions],
         &device_extensions,
-        &enable_raytracing_pipeline,
+        c.VkPhysicalDeviceFeatures{},
+        &raytracing_pipeline_feature,
         true,
         window,
         create_surface,

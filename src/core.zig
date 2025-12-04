@@ -18,7 +18,8 @@ pub const Core = struct {
     pub fn init(
         instance_extensions: []const [*c]const u8,
         device_extensions: []const [*c]const u8,
-        device_next: ?*const anyopaque,
+        device_features: c.VkPhysicalDeviceFeatures,
+        device_extension_features: ?*const anyopaque,
         enable_debug: bool,
         user_data: ?*anyopaque,
         create_surface: CreateSurfaceFn,
@@ -35,7 +36,13 @@ pub const Core = struct {
         const phys_device, const properties, const queue_family_idx = try pick_best_device(suitable_devices);
         std.log.info("Picking device: {s}", .{properties.deviceName});
 
-        const device = try create_device(phys_device, queue_family_idx, device_extensions, device_next);
+        const device = try create_device(
+            phys_device,
+            queue_family_idx,
+            device_extensions,
+            device_features,
+            device_extension_features,
+        );
 
         var queue: c.VkQueue = undefined;
         c.vkGetDeviceQueue(device, queue_family_idx, queue_family_idx, &queue);
@@ -237,10 +244,9 @@ pub fn create_device(
     physical_device: c.VkPhysicalDevice,
     queue_family_idx: u32,
     extensions: []const [*c]const u8,
-    next: ?*const anyopaque,
+    features: c.VkPhysicalDeviceFeatures,
+    feature_extensions: ?*const anyopaque,
 ) !c.VkDevice {
-    const device_features = c.VkPhysicalDeviceFeatures{};
-
     const queue_priority: f32 = 0.5;
     const queue_create_info = c.VkDeviceQueueCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -253,10 +259,10 @@ pub fn create_device(
         .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pQueueCreateInfos = &queue_create_info,
         .queueCreateInfoCount = 1,
-        .pEnabledFeatures = &device_features,
+        .pEnabledFeatures = &features,
         .ppEnabledExtensionNames = extensions.ptr,
         .enabledExtensionCount = @intCast(extensions.len),
-        .pNext = next,
+        .pNext = feature_extensions,
     };
 
     var device: c.VkDevice = undefined;
