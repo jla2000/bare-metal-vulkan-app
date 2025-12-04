@@ -13,6 +13,7 @@ pub const Core = struct {
     phys_device: c.VkPhysicalDevice,
     device: c.VkDevice,
     queue: c.VkQueue,
+    queue_family_idx: u32,
 
     pub fn init(
         instance_extensions: []const [*c]const u8,
@@ -46,6 +47,7 @@ pub const Core = struct {
             .phys_device = phys_device,
             .device = device,
             .queue = queue,
+            .queue_family_idx = queue_family_idx,
         };
     }
 

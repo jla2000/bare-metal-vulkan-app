@@ -1,6 +1,8 @@
 const std = @import("std");
 const c = @import("common.zig").c;
+
 const allocator = @import("common.zig").allocator;
+const vk_error = @import("common.zig").vk_error;
 
 const Core = @import("core.zig").Core;
 const Swapchain = @import("swapchain.zig").Swapchain;
@@ -49,6 +51,64 @@ pub fn main() !void {
 
     var swapchain = try Swapchain.init(core, @intCast(width), @intCast(height));
     defer swapchain.deinit(core);
+
+    const pool_create_info = c.VkCommandPoolCreateInfo{
+        .sType = c.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = c.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = core.queue_family_idx,
+    };
+
+    var command_pool: c.VkCommandPool = undefined;
+    try vk_error(c.vkCreateCommandPool(core.device, &pool_create_info, null, &command_pool));
+    defer c.vkDestroyCommandPool(core.device, command_pool, null);
+
+    const alloc_info = c.VkCommandBufferAllocateInfo{
+        .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = command_pool,
+        .level = c.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+
+    var command_buffer: c.VkCommandBuffer = undefined;
+    try vk_error(c.vkAllocateCommandBuffers(core.device, &alloc_info, &command_buffer));
+
+    var image_available_semaphore: c.VkSemaphore = undefined;
+    var render_finished_semaphore: c.VkSemaphore = undefined;
+    var in_flight_fence: c.VkFence = undefined;
+
+    const semaphore_create_info = c.VkSemaphoreCreateInfo{ .sType = c.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+    const fence_create_info = c.VkFenceCreateInfo{
+        .sType = c.VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .flags = c.VK_FENCE_CREATE_SIGNALED_BIT,
+    };
+
+    try vk_error(c.vkCreateSemaphore(core.device, &semaphore_create_info, null, &image_available_semaphore));
+    try vk_error(c.vkCreateSemaphore(core.device, &semaphore_create_info, null, &render_finished_semaphore));
+    try vk_error(c.vkCreateFence(core.device, &fence_create_info, null, &in_flight_fence));
+
+    defer c.vkDestroySemaphore(core.device, image_available_semaphore, null);
+    defer c.vkDestroySemaphore(core.device, render_finished_semaphore, null);
+    defer c.vkDestroyFence(core.device, in_flight_fence, null);
+
+    while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
+        c.glfwPollEvents();
+
+        var image_idx: u32 = undefined;
+        try vk_error(c.vkAcquireNextImageKHR(core.device, swapchain.handle, c.UINT64_MAX, image_available_semaphore, null, &image_idx));
+
+        const present_info = c.VkPresentInfoKHR{
+            .sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &image_available_semaphore,
+            .pSwapchains = &swapchain.handle,
+            .swapchainCount = 1,
+            .pImageIndices = &image_idx,
+        };
+
+        try vk_error(c.vkQueuePresentKHR(core.queue, &present_info));
+    }
+
+    try vk_error(c.vkDeviceWaitIdle(core.device));
 }
 
 fn create_surface(user_data: ?*anyopaque, instance: c.VkInstance, surface: *c.VkSurfaceKHR) c.VkResult {

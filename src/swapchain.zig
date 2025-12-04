@@ -91,7 +91,7 @@ fn choose_swapchain_present_mode(physical_device: c.VkPhysicalDevice, surface: c
     var num_present_modes: u32 = 0;
     try vk_error(c.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &num_present_modes, null));
 
-    const present_modes = allocator.alloc(c.VkPresentModeKHR, num_present_modes) catch unreachable;
+    const present_modes = try allocator.alloc(c.VkPresentModeKHR, num_present_modes);
     defer allocator.free(present_modes);
     try vk_error(c.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &num_present_modes, present_modes.ptr));
 
