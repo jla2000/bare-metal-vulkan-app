@@ -10,7 +10,6 @@ pub const Context = struct {
     phys_device: c.VkPhysicalDevice,
     device: c.VkDevice,
     queue: c.VkQueue,
-    queue_family_idx: u32,
 
     pub fn init(
         window_handle: ?*anyopaque,
@@ -34,14 +33,16 @@ pub const Context = struct {
 
         const device = try create_device(phys_device, queue_family_idx, device_extensions);
 
+        var queue: c.VkQueue = undefined;
+        c.vkGetDeviceQueue(device, queue_family_idx, queue_family_idx, &queue);
+
         return .{
             .instance = instance,
             .debug_messenger = debug_messenger,
             .surface = surface,
             .phys_device = phys_device,
             .device = device,
-            .queue = undefined,
-            .queue_family_idx = queue_family_idx,
+            .queue = queue,
         };
     }
 
