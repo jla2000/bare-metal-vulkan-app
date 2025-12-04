@@ -34,11 +34,11 @@ pub fn main() !void {
     };
 
     var core = try Core.init(
-        window,
         glfw_extensions[0..num_glfw_extensions],
         &device_extensions,
         &enable_raytracing_pipeline,
         true,
+        window,
         create_surface,
     );
     defer core.deinit();
@@ -51,9 +51,9 @@ pub fn main() !void {
     defer swapchain.deinit(core);
 }
 
-fn create_surface(window: ?*anyopaque, instance: c.VkInstance, surface: *c.VkSurfaceKHR) c.VkResult {
-    const window_: *c.GLFWwindow = @ptrCast(window);
-    return c.glfwCreateWindowSurface(instance, window_, null, surface);
+fn create_surface(user_data: ?*anyopaque, instance: c.VkInstance, surface: *c.VkSurfaceKHR) c.VkResult {
+    const window: *c.GLFWwindow = @ptrCast(user_data);
+    return c.glfwCreateWindowSurface(instance, window, null, surface);
 }
 
 // const std = @import("std");

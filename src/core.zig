@@ -15,18 +15,18 @@ pub const Core = struct {
     queue: c.VkQueue,
 
     pub fn init(
-        window_handle: ?*anyopaque,
         instance_extensions: []const [*c]const u8,
         device_extensions: []const [*c]const u8,
         device_next: ?*const anyopaque,
         enable_debug: bool,
+        user_data: ?*anyopaque,
         create_surface: CreateSurfaceFn,
     ) !Core {
         const instance = try create_instance(instance_extensions, enable_debug);
         const debug_messenger = if (enable_debug) try create_debug_messenger(instance) else null;
 
         var surface: c.VkSurfaceKHR = undefined;
-        try vk_error(create_surface(window_handle, instance, &surface));
+        try vk_error(create_surface(user_data, instance, &surface));
 
         const suitable_devices = try find_suitable_devices(instance, surface);
         defer allocator.free(suitable_devices);
