@@ -1,9 +1,12 @@
 const std = @import("std");
-const c = @import("c.zig").c;
+const c = @import("common.zig").c;
+
+const allocator = @import("common.zig").allocator;
+const vk_error = @import("common.zig").vk_error;
 
 pub const CreateSurfaceFn = fn (?*anyopaque, c.VkInstance, *c.VkSurfaceKHR) c.VkResult;
 
-pub const Context = struct {
+pub const Core = struct {
     instance: c.VkInstance,
     debug_messenger: ?c.VkDebugUtilsMessengerEXT,
     surface: c.VkSurfaceKHR,
@@ -13,20 +16,19 @@ pub const Context = struct {
 
     pub fn init(
         window_handle: ?*anyopaque,
-        allocator: std.mem.Allocator,
         instance_extensions: []const [*c]const u8,
         device_extensions: []const [*c]const u8,
         device_next: ?*const anyopaque,
         enable_debug: bool,
         create_surface: CreateSurfaceFn,
-    ) !Context {
-        const instance = try create_instance(allocator, instance_extensions, enable_debug);
+    ) !Core {
+        const instance = try create_instance(instance_extensions, enable_debug);
         const debug_messenger = if (enable_debug) try create_debug_messenger(instance) else null;
 
         var surface: c.VkSurfaceKHR = undefined;
         try vk_error(create_surface(window_handle, instance, &surface));
 
-        const suitable_devices = try find_suitable_devices(allocator, instance, surface);
+        const suitable_devices = try find_suitable_devices(instance, surface);
         defer allocator.free(suitable_devices);
 
         const phys_device, const properties, const queue_family_idx = try pick_best_device(suitable_devices);
@@ -47,7 +49,7 @@ pub const Context = struct {
         };
     }
 
-    pub fn deinit(self: *Context) void {
+    pub fn deinit(self: *Core) void {
         c.vkDestroyDevice(self.device, null);
         c.vkDestroySurfaceKHR(self.instance, self.surface, null);
         if (self.debug_messenger) |*debug_messenger| {
@@ -57,14 +59,7 @@ pub const Context = struct {
     }
 };
 
-pub fn vk_error(result: c.VkResult) !void {
-    if (result != c.VK_SUCCESS) {
-        return error.Vulkan;
-    }
-}
-
 fn create_instance(
-    allocator: std.mem.Allocator,
     required_extensions: []const [*c]const u8,
     enable_debug: bool,
 ) !c.VkInstance {
@@ -155,7 +150,6 @@ pub fn destroy_debug_messenger(instance: c.VkInstance, debug_messenger: *c.VkDeb
 }
 
 pub fn find_suitable_devices(
-    allocator: std.mem.Allocator,
     instance: c.VkInstance,
     surface: c.VkSurfaceKHR,
 ) ![]struct { c.VkPhysicalDevice, c.VkPhysicalDeviceProperties, u32 } {
@@ -169,7 +163,7 @@ pub fn find_suitable_devices(
     var suitable_devices = std.ArrayList(struct { c.VkPhysicalDevice, c.VkPhysicalDeviceProperties, u32 }){};
 
     for (physical_devices) |physical_device| {
-        const queue_family_idx = try find_queue_family_index(allocator, physical_device, surface) orelse continue;
+        const queue_family_idx = try find_queue_family_index(physical_device, surface) orelse continue;
 
         var properties: c.VkPhysicalDeviceProperties = undefined;
         c.vkGetPhysicalDeviceProperties(physical_device, &properties);
@@ -212,7 +206,6 @@ fn pick_best_device(
 }
 
 pub fn find_queue_family_index(
-    allocator: std.mem.Allocator,
     physical_device: c.VkPhysicalDevice,
     surface: c.VkSurfaceKHR,
 ) !?u32 {

@@ -1,9 +1,9 @@
 const std = @import("std");
-const core = @import("core.zig");
+const c = @import("common.zig").c;
+const allocator = @import("common.zig").allocator;
 
-const c = @import("c.zig").c;
-
-const allocator = std.heap.c_allocator;
+const Core = @import("core.zig").Core;
+const Swapchain = @import("swapchain.zig").Swapchain;
 
 pub fn main() !void {
     if (c.glfwInit() != c.GLFW_TRUE) {
@@ -33,16 +33,22 @@ pub fn main() !void {
         .rayTracingPipeline = c.VK_TRUE,
     };
 
-    var context = try core.Context.init(
+    var core = try Core.init(
         window,
-        allocator,
         glfw_extensions[0..num_glfw_extensions],
         &device_extensions,
         &enable_raytracing_pipeline,
         true,
         create_surface,
     );
-    defer context.deinit();
+    defer core.deinit();
+
+    var width: i32 = 0;
+    var height: i32 = 0;
+    c.glfwGetFramebufferSize(window, &width, &height);
+
+    var swapchain = try Swapchain.init(core, @intCast(width), @intCast(height));
+    defer swapchain.deinit(core);
 }
 
 fn create_surface(window: ?*anyopaque, instance: c.VkInstance, surface: *c.VkSurfaceKHR) c.VkResult {
