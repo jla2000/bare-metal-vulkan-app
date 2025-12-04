@@ -16,6 +16,7 @@ pub const Context = struct {
         allocator: std.mem.Allocator,
         instance_extensions: []const [*c]const u8,
         device_extensions: []const [*c]const u8,
+        device_next: ?*const anyopaque,
         enable_debug: bool,
         create_surface: CreateSurfaceFn,
     ) !Context {
@@ -31,7 +32,7 @@ pub const Context = struct {
         const phys_device, const properties, const queue_family_idx = try pick_best_device(suitable_devices);
         std.log.info("Picking device: {s}", .{properties.deviceName});
 
-        const device = try create_device(phys_device, queue_family_idx, device_extensions);
+        const device = try create_device(phys_device, queue_family_idx, device_extensions, device_next);
 
         var queue: c.VkQueue = undefined;
         c.vkGetDeviceQueue(device, queue_family_idx, queue_family_idx, &queue);
@@ -237,7 +238,12 @@ pub fn find_queue_family_index(
     return null;
 }
 
-pub fn create_device(physical_device: c.VkPhysicalDevice, queue_family_idx: u32, extensions: []const [*c]const u8) !c.VkDevice {
+pub fn create_device(
+    physical_device: c.VkPhysicalDevice,
+    queue_family_idx: u32,
+    extensions: []const [*c]const u8,
+    next: ?*const anyopaque,
+) !c.VkDevice {
     const device_features = c.VkPhysicalDeviceFeatures{};
 
     const queue_priority: f32 = 0.5;
@@ -248,11 +254,6 @@ pub fn create_device(physical_device: c.VkPhysicalDevice, queue_family_idx: u32,
         .pQueuePriorities = &queue_priority,
     };
 
-    const enable_raytracing_pipeline = c.VkPhysicalDeviceRayTracingPipelineFeaturesKHR{
-        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
-        .rayTracingPipeline = c.VK_TRUE,
-    };
-
     const device_create_info = c.VkDeviceCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pQueueCreateInfos = &queue_create_info,
@@ -260,7 +261,7 @@ pub fn create_device(physical_device: c.VkPhysicalDevice, queue_family_idx: u32,
         .pEnabledFeatures = &device_features,
         .ppEnabledExtensionNames = extensions.ptr,
         .enabledExtensionCount = @intCast(extensions.len),
-        .pNext = &enable_raytracing_pipeline,
+        .pNext = next,
     };
 
     var device: c.VkDevice = undefined;

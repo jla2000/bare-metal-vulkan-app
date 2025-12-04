@@ -28,11 +28,17 @@ pub fn main() !void {
         c.VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
     };
 
+    const enable_raytracing_pipeline = c.VkPhysicalDeviceRayTracingPipelineFeaturesKHR{
+        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
+        .rayTracingPipeline = c.VK_TRUE,
+    };
+
     var context = try core.Context.init(
         window,
         allocator,
         glfw_extensions[0..num_glfw_extensions],
         &device_extensions,
+        &enable_raytracing_pipeline,
         true,
         create_surface,
     );
